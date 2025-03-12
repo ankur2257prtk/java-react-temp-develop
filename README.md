@@ -1,3 +1,4 @@
+
 :loop
 :: Call Databricks API using PowerShell and capture the result
 for /f "delims=" %%k in ('powershell -Command ^
