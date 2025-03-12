@@ -1,26 +1,34 @@
+@echo off
+setlocal enabledelayedexpansion
+
+:: Set API URL
+set "URL=https://adb-2216837978015015.15.azuredatabricks.net/api/2.1/jobs/runs/get"
+set "AUTH_HEADER=Authorization: Bearer YOUR_ACCESS_TOKEN"
 
 :loop
-:: Call Databricks API using PowerShell and capture the result
-for /f "delims=" %%k in ('powershell -Command ^
-    "$headers = @{ Authorization='Bearer %ACCESS_TOKEN%' }; ^
-    try { $response = Invoke-RestMethod -Method Get -Uri '%GET_JOB_STATUS_URL%' -Headers $headers; ^
-          if ($response.PSObject.Properties.Name -contains 'state' -and $response.state.PSObject.Properties.Name -contains 'result_state') { $response.state.result_state } else { 'NOT_FOUND' } } ^
-    catch { 'ERROR: ' + $_.Exception.Message }"') do (
-    set "result_state=%%k"
+:: Call API and get response
+for /f "delims=" %%A in ('powershell -Command ^
+    "$response = Invoke-RestMethod -Method Get -Uri '%URL%' -Headers @{Authorization='Bearer YOUR_ACCESS_TOKEN'}; $response | ConvertTo-Json -Depth 100"') do (
+    set "response=%%A"
 )
 
-:: Check if result_state is found
-if "%result_state%"=="NOT_FOUND" (
-    echo Result state not found, checking again...
-    timeout /t 20 /nobreak
-    goto :loop
+:: Check if result_state exists in response
+for /f "delims=" %%B in ('powershell -Command ^
+    "$json = '%response%'; $obj = ConvertFrom-Json -InputObject $json; if ($obj.PSObject.Properties.name -contains 'state' -and $obj.state.PSObject.Properties.name -contains 'result_state') { $true } else { $false }"') do (
+    set "has_result_state=%%B"
 )
 
-:: Check job status
-if /I "%result_state%"=="SUCCESS" (
-    echo Job succeeded.
+:: If result_state exists, extract and display it
+if "%has_result_state%"=="True" (
+    for /f "delims=" %%C in ('powershell -Command ^
+        "$json = '%response%'; $obj = ConvertFrom-Json -InputObject $json; $obj.state.result_state"') do (
+        set "result_state=%%C"
+    )
+    
+    echo { "result_state": "%result_state%" }
     exit /b 0
-) else (
-    echo Job failed with status: %result_state%
-    exit /b 1
 )
+
+:: If result_state is not found, wait and retry
+timeout /t 20 /nobreak >nul
+goto :loop
